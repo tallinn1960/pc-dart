@@ -30,30 +30,44 @@ class ECDHBasicAgreement implements ECDHAgreement {
   @override
   BigInt calculateAgreement(ECPublicKey pubKey) {
     var params = key.parameters;
-    if (pubKey.parameters?.curve != params?.curve) {
-      throw PlatformException('ECDH public key has wrong domain parameters');
+
+    if (params == null || pubKey.parameters == null) {
+      throw ArgumentError('ECDH private or public key has no parameters');
     }
 
-    var d = key.d!;
+    if (pubKey.parameters?.curve != params.curve) {
+      throw ArgumentError('ECDH public key has wrong domain parameters');
+    }
 
-    // Always perform calculations on the exact curve specified by our private key's parameters
-    var Q = cleanPoint(params!.curve, pubKey.Q!);
+    var d = key.d;
+    if (d == null) {
+      throw ArgumentError('ECDH private key has no private key value');
+    }
+
+    var Q = pubKey.Q;
     if (Q == null || Q.isInfinity) {
-      throw PlatformException('Infinity is not a valid public key for ECDH');
+      throw ArgumentError('ECDH public key has no public key value');
     }
 
-    var h = (params as ECDomainParametersImpl).h!;
+    // Note, although declared, none of the operations on ECPoint may return null
+    // Always perform calculations on the exact curve specified by our private key's parameters
+    Q = cleanPoint(params.curve, Q)!;
+    if (Q.isInfinity) {
+      throw ArgumentError('Infinity is not a valid public key for ECDH');
+    }
 
+    var h = (params as ECDomainParametersImpl).h;
+    if (h == null) {
+      throw ArgumentError('ECDH Privatekey parameters h == null');
+    }
     if (!(h.compareTo(BigInt.one) == 0)) {
       d = (h.modInverse(params.n) * d) % params.n;
-      Q = Q * h;
+      Q = (Q * h)!;
     }
 
-    var P = (Q! * d)!;
-
-    if (P.isInfinity) {
-      throw PlatformException(
-          'Infinity is not a valid agreement value for ECDH');
+    var P = (Q * d)!;
+    if(P.isInfinity) {
+      throw StateError("Infinity is not a valid key agreement value");
     }
 
     return P.x!.toBigInteger()!;
