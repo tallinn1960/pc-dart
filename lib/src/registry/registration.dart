@@ -117,6 +117,7 @@ void _registerKeyDerivators(FactoryRegistry registry) {
   registry.register(Scrypt.factoryConfig);
   registry.register(HKDFKeyDerivator.factoryConfig);
   registry.register(Argon2BytesGenerator.factoryConfig);
+  registry.register(HMacConcatKDFDerivator.factoryConfig);
   registry.register(ConcatKDFDerivator.factoryConfig);
   registry.register(ECDHKeyDerivator.factoryConfig);
 }

@@ -25,6 +25,27 @@ Uint8List nullSafeBytes(dynamic src) {
 }
 
 void main() {
+  Uint8List computerOtherInfo(String encryptionAlgorithmName, int keybitLength,
+      {Uint8List? apu, Uint8List? apv}) {
+    Uint8List convertToBigEndian(int l) {
+      var ll = Uint8List(4);
+      ll[0] = (l >> 24) & 255;
+      ll[1] = (l >> 16) & 255;
+      ll[2] = (l >> 8) & 255;
+      ll[3] = (l) & 255;
+      return ll;
+    }
+
+    var l = encryptionAlgorithmName.codeUnits.length.toUnsigned(32);
+    var ll = convertToBigEndian(l);
+    var a = Uint8List.fromList(encryptionAlgorithmName.codeUnits);
+    var apul = convertToBigEndian(apu?.length ?? 0);
+    var apvl = convertToBigEndian(apv?.length ?? 0);
+    var k = convertToBigEndian(keybitLength);
+    return Uint8List.fromList(
+        [...ll, ...a, ...apul, ...(apu ?? []), ...apvl, ...(apv ?? []), ...k]);
+  }
+
   var acvpToDart = Map();
   acvpToDart['SHA2-224'] = 'SHA-224';
   acvpToDart['SHA2-256'] = 'SHA-256';
@@ -133,98 +154,27 @@ void main() {
 
   group('RFC7518', () {
     test('Test concatKDF from RFC 7518 Appendix C', () {
+      List<int> intListFromJsonArray(String s) {
+        return List<int>.from(jsonDecode(s));
+      }
+
       var kdf = KeyDerivator('SHA-256/ConcatKDF');
-      var Z = Uint8List.fromList([
-        158,
-        86,
-        217,
-        29,
-        129,
-        113,
-        53,
-        211,
-        114,
-        131,
-        66,
-        131,
-        191,
-        132,
-        38,
-        156,
-        251,
-        49,
-        110,
-        163,
-        218,
-        128,
-        106,
-        72,
-        246,
-        218,
-        167,
-        121,
-        140,
-        254,
-        144,
-        196
-      ]);
-      var otherData = Uint8List.fromList([
-        0,
-        0,
-        0,
-        7,
-        65,
-        49,
-        50,
-        56,
-        71,
-        67,
-        77,
-        0,
-        0,
-        0,
-        5,
-        65,
-        108,
-        105,
-        99,
-        101,
-        0,
-        0,
-        0,
-        3,
-        66,
-        111,
-        98,
-        0,
-        0,
-        0,
-        128
-      ]);
+      var Z = Uint8List.fromList(intListFromJsonArray('''
+     [158, 86, 217, 29, 129, 113, 53, 211, 114, 131, 66, 131, 191, 132,
+      38, 156, 251, 49, 110, 163, 218, 128, 106, 72, 246, 218, 167, 121,
+      140, 254, 144, 196]'''));
+
+      var otherInfo = computerOtherInfo('A128GCM', 128,
+          apu: Uint8List.fromList('Alice'.codeUnits),
+          apv: Uint8List.fromList('Bob'.codeUnits));
+
       var params = HkdfParameters(Z, 128);
       kdf.init(params);
 
-      var key = kdf.process(otherData);
-      expect(
-          key,
-          Uint8List.fromList([
-            86,
-            170,
-            141,
-            234,
-            248,
-            35,
-            109,
-            32,
-            92,
-            34,
-            40,
-            205,
-            113,
-            167,
-            16,
-            26
-          ]));
+      var key = kdf.process(otherInfo);
+      expect(key, Uint8List.fromList(intListFromJsonArray('''
+        [86, 170, 141, 234, 248, 35, 109, 32, 
+         92, 34, 40, 205, 113, 167, 16, 26]''')));
     });
 
     test('Test concatKdf A1 derived from jose4j', () {
@@ -251,24 +201,26 @@ void main() {
       expect('vphyobtvExGXF7TaOvAkx6CCjHQNYamP2ET8xkhTu-0=', keyencoded);
     });
   });
-}
 
-// Helpers for ECDH-ES
-Uint8List computerOtherInfo(String _encryptionAlgorithmName, int _keybitLength) {
-  var l = _encryptionAlgorithmName.codeUnits.length.toUnsigned(32);
-  var ll = _convertToBigEndian(l);
-  var a = Uint8List.fromList(_encryptionAlgorithmName.codeUnits);
-//TODO: add apu, apv, fixed to empty for now
-  var zero = _convertToBigEndian(0);
-  var k = _convertToBigEndian(_keybitLength);
-  return Uint8List.fromList([...ll, ...a, ...zero, ...zero, ...k]);
-}
+  group('HMAC-ConcatKDF', () {
+    test('Get an HMAC-ConcatKDF derivator', () {
+      var kdf = KeyDerivator('SHA-256/HMAC/ConcatKDF');
+      expect(kdf, isNotNull);
+    });
 
-Uint8List _convertToBigEndian(int l) {
-  var ll = Uint8List(4);
-  ll[0] = (l >> 24) & 255;
-  ll[1] = (l >> 16) & 255;
-  ll[2] = (l >> 8) & 255;
-  ll[3] = (l) & 255;
-  return ll;
+    test('Tests for HMAC-ConcatKDF derivator', () {
+      // Test vector from https://github.com/pyca/cryptography.git
+      var Z = createUint8ListFromHexString(
+          '013951627c1dea63ea2d7702dd24e963eef5faac6b4af7e4b831cde499dff1ce45f6179f741c728aa733583b024092088f0af7fce1d045edbc5790931e8d5ca79c73');
+      var otherInfo = createUint8ListFromHexString(
+          'a1b2c3d4e55e600be5f367e0e8a465f4bf2704db00c9325c9fbd216d12b49160b2ae5157650f43415653696421e68e');
+      var salt = Uint8List.fromList(List.filled(128, 0));
+      var okm =
+          '64ce901db10d558661f10b6836a122a7605323ce2f39bf27eaaac8b34cf89f2f';
+      var parms = HkdfParameters(Z, 256, salt);
+      var kdf = KeyDerivator('SHA-512/HMAC/ConcatKDF')..init(parms);
+      var key = kdf.process(otherInfo);
+      expect(formatBytesAsHexString(key), equals(okm));
+    });
+  });
 }
